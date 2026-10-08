@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Turnitin Report Forensics — Linkai</title>
+  <meta name="description" content="Local PDF forensics tool for Turnitin reports. Analyzes metadata, timeline consistency, submission IDs, and internal structure." />
+  <meta name="theme-color" content="#08090b" />
+  <link rel="canonical" href="https://linkai.codes/turnitin-check/" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://linkai.codes/turnitin-check/" />
+  <meta property="og:title" content="Turnitin Report Forensics — Linkai" />
+  <meta property="og:description" content="Local PDF metadata and timeline forensics check for Turnitin reports. 100% private in browser." />
+
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2308090b'/%3E%3Ctext x='50%25' y='54%25' text-anchor='middle' dominant-baseline='middle' font-family='Arial,sans-serif' font-weight='700' font-size='38' fill='%23eef2f5'%3EL%3C/text%3E%3Ccircle cx='47' cy='44' r='5' fill='%234cc4ea'/%3E%3C/svg%3E" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ============ Tokens (Identical to linkai.codes) ============ */
+    :root {
+      color-scheme: dark;
+
+      --bg: #08090b;
+      --bg-raise: #0b0d10;
+      --surface: #0f1216;
+      --surface-2: #14181d;
+      --surface-3: #1a1f25;
+
+      --line-subtle: rgba(226, 236, 245, 0.05);
+      --line: rgba(226, 236, 245, 0.075);
+      --line-strong: rgba(226, 236, 245, 0.15);
+
+      --text: #eef2f5;
+      --text-2: #a9b3bc;
+      --text-3: #78838d;
+
+      --accent: #4cc4ea;
+      --accent-hi: #6fd2f1;
+      --accent-text: #8fdcf5;
+      --accent-ink: #031219;
+      --accent-soft: rgba(76, 196, 234, 0.1);
+      --accent-line: rgba(76, 196, 234, 0.35);
+
+      /* Semantic status indicators */
+      --status-good: #6cc59a;
+      --status-good-bg: rgba(108, 197, 154, 0.12);
+      --status-good-line: rgba(108, 197, 154, 0.3);
+
+      --status-warn: #d8b064;
+      --status-warn-bg: rgba(216, 176, 100, 0.12);
+      --status-warn-line: rgba(216, 176, 100, 0.3);
+
+      --status-bad: #df8080;
+      --status-bad-bg: rgba(223, 128, 128, 0.12);
+      --status-bad-line: rgba(223, 128, 128, 0.3);
+
+      --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+      --r-xs: 6px;
+      --r-sm: 10px;
+      --r-md: 14px;
+      --r-lg: 18px;
+      --r-xl: 26px;
+      --r-pill: 9999px;
+
+      --inner-hi: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 12px rgba(255, 255, 255, 0.02);
+      --shadow-card: 0 18px 40px -18px rgba(0, 0, 0, 0.8), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
+
+      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+      --ease-snap: cubic-bezier(0.23, 1, 0.32, 1);
+      --ease-reveal: cubic-bezier(0.16, 1, 0.3, 1);
+
+      --container: 1040px;
+      --gutter: clamp(16px, 4vw, 36px);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+      border-radius: var(--r-xs);
+    }
+
+    ::selection { background: var(--accent-soft); color: var(--accent-text); }
+
+    .container {
+      width: min(var(--container), 100% - var(--gutter) * 2);
+      margin-inline: auto;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-3);
+    }
+
+    .text-gradient {
+      background: linear-gradient(180deg, #78838d 0%, #c6ced5 35%, #f4f7f9 70%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    /* Ambient lighting */
+    .ambient {
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 700px;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .ambient .shaft {
+      position: absolute;
+      top: -240px;
+      left: 50%;
+      width: 480px;
+      height: 900px;
+      transform: translateX(-40%) rotate(20deg);
+      background: linear-gradient(180deg, rgba(76, 196, 234, 0.22) 0%, rgba(76, 196, 234, 0.04) 50%, transparent 75%);
+      filter: blur(75px);
+    }
+
+    .ambient .glow {
+      position: absolute;
+      top: -160px;
+      left: 50%;
+      width: 680px;
+      height: 380px;
+      transform: translateX(-50%);
+      background: radial-gradient(50% 50% at 50% 50%, rgba(76, 196, 234, 0.12) 0%, rgba(76, 196, 234, 0.02) 60%, transparent 100%);
+      filter: blur(60px);
+    }
+
+    .ambient .grid-bg {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--line-subtle) 1px, transparent 1px),
+        linear-gradient(90deg, var(--line-subtle) 1px, transparent 1px);
+      background-size: 64px 64px;
+      mask-image: radial-gradient(ellipse 60% 50% at 50% 0%, #000 30%, transparent 80%);
+      -webkit-mask-image: radial-gradient(ellipse 60% 50% at 50% 0%, #000 30%, transparent 80%);
+    }
+
+    /* Floating Navigation Pill */
+    .nav {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      width: min(100% - 32px, 860px);
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 10px 0 20px;
+      border-radius: var(--r-pill);
+      background: rgba(15, 18, 22, 0.72);
+      border: 1px solid var(--line);
+      box-shadow: var(--inner-hi), 0 16px 40px -18px rgba(0, 0, 0, 0.8);
+      -webkit-backdrop-filter: blur(16px) saturate(150%);
+      backdrop-filter: blur(16px) saturate(150%);
+    }
+
+    .logo {
+      font-weight: 600;
+      font-size: 17px;
+      letter-spacing: -0.03em;
+    }
+    .logo span { color: var(--accent); }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .nav-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13.5px;
+      color: var(--text-2);
+      padding: 7px 14px;
+      border-radius: var(--r-pill);
+      transition: color 180ms ease, background-color 180ms ease;
+    }
+    .nav-back:hover {
+      color: var(--text);
+      background: var(--surface-2);
+    }
+    .nav-back svg {
+      transition: transform 180ms var(--ease-snap);
+    }
+    .nav-back:hover svg {
+      transform: translateX(-2px);
+    }
+
+    .lang-switch {
+      display: flex;
+      padding: 3px;
+      border-radius: var(--r-pill);
+      background: var(--bg-raise);
+      border: 1px solid var(--line);
+    }
+
+    .lang-switch button {
+      min-width: 34px;
+      height: 30px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: var(--r-pill);
+      background: transparent;
+      color: var(--text-3);
+      font: 500 12px/1 var(--font-sans);
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: color 180ms ease, background-color 180ms ease, transform 140ms var(--ease-snap);
+    }
+    .lang-switch button:hover { color: var(--text); }
+    .lang-switch button:active { transform: scale(0.94); }
+    .lang-switch button[aria-pressed="true"] {
+      background: var(--surface-3);
+      color: var(--text);
+      box-shadow: var(--inner-hi), 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Main Container */
+    main {
+      position: relative;
+      z-index: 1;
+      padding-top: 120px;
+      padding-bottom: 80px;
+      flex: 1;
+    }
+
+    /* Header section */
+    .header-section {
+      margin-bottom: 32px;
+    }
+
+    .badge-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 12px;
+      margin-bottom: 20px;
+      border-radius: var(--r-pill);
+      border: 1px solid var(--line-strong);
+      background: rgba(15, 18, 22, 0.6);
+      box-shadow: var(--inner-hi);
+      font-size: 12.5px;
+      color: var(--text-2);
+    }
+    .badge-bar .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft), 0 0 10px var(--accent);
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: clamp(2.2rem, 5vw, 3.8rem);
+      font-weight: 600;
+      line-height: 1.08;
+      letter-spacing: -0.04em;
+      text-wrap: balance;
+    }
+
+    .lead {
+      max-width: 48rem;
+      font-size: clamp(1rem, 0.95rem + 0.3vw, 1.15rem);
+      color: var(--text-2);
+      line-height: 1.65;
+      margin: 0 0 24px;
+      text-wrap: pretty;
+    }
+
+    /* Notice callout */
+    .notice {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--r-md);
+      padding: 16px 20px;
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: var(--text-2);
+      margin-bottom: 32px;
+      box-shadow: var(--inner-hi);
+    }
+    .notice strong {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    /* Dropzone area */
+    .dropzone {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      border-radius: var(--r-xl);
+      background: var(--surface);
+      border: 1.5px dashed var(--line-strong);
+      box-shadow: var(--inner-hi), var(--shadow-card);
+      padding: 60px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 240ms ease, background-color 240ms ease, transform 240ms var(--ease-snap), box-shadow 240ms ease;
+    }
+
+    .dropzone:hover, .dropzone.drag {
+      border-color: var(--accent);
+      background: var(--surface-2);
+      transform: translateY(-2px);
+      box-shadow: var(--inner-hi), 0 24px 50px -16px rgba(76, 196, 234, 0.2);
+    }
+
+    .dropzone-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: var(--r-lg);
+      background: var(--bg-raise);
+      border: 1px solid var(--line);
+      display: grid;
+      place-items: center;
+      color: var(--accent);
+      box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.6);
+      transition: transform 240ms var(--ease-snap);
+    }
+
+    .dropzone:hover .dropzone-icon {
+      transform: scale(1.08);
+    }
+
+    .dropzone-title {
+      font-size: 1.25rem;
+      font-weight: 550;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .dropzone-subtitle {
+      font-size: 13.5px;
+      color: var(--text-3);
+    }
+
+    input[type="file"] { display: none; }
+
+    .privacy-tag {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--text-3);
+    }
+
+    /* Action bar */
+    .toolbar {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 24px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      height: 44px;
+      padding: 0 22px;
+      border-radius: var(--r-pill);
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 140ms var(--ease-snap), background-color 180ms ease,
+        box-shadow 180ms ease, border-color 180ms ease, color 180ms ease;
+    }
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--accent-ink);
+      border: none;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 8px 24px -8px rgba(76, 196, 234, 0.75);
+    }
+    .btn-primary:hover {
+      background: var(--accent-hi);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 12px 32px -8px rgba(76, 196, 234, 0.9);
+    }
+
+    .btn-ghost {
+      background: rgba(15, 18, 22, 0.6);
+      color: var(--text);
+      border: 1px solid var(--line-strong);
+      box-shadow: var(--inner-hi);
+    }
+    .btn-ghost:hover {
+      border-color: rgba(226, 236, 245, 0.3);
+      background: var(--surface-2);
+    }
+
+    #status {
+      margin: 28px 0 12px;
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-2);
+      min-height: 24px;
+    }
+
+    /* Results layout */
+    .results {
+      display: grid;
+      gap: 24px;
+      margin-top: 24px;
+    }
+
+    .report {
+      border-radius: var(--r-xl);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--inner-hi), var(--shadow-card);
+      padding: 28px;
+      animation: fadeIn 400ms var(--ease-out);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .report-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      border-bottom: 1px solid var(--line-subtle);
+      padding-bottom: 22px;
+      margin-bottom: 22px;
+    }
+
+    .report-title-area {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .report-file-name {
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      word-break: break-all;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .report-badge-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .badge-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: var(--r-pill);
+      font-size: 12.5px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+    .badge-status.good {
+      background: var(--status-good-bg);
+      color: var(--status-good);
+      border: 1px solid var(--status-good-line);
+    }
+    .badge-status.warn {
+      background: var(--status-warn-bg);
+      color: var(--status-warn);
+      border: 1px solid var(--status-warn-line);
+    }
+    .badge-status.bad {
+      background: var(--status-bad-bg);
+      color: var(--status-bad);
+      border: 1px solid var(--status-bad-line);
+    }
+    .badge-status::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .report-score {
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .report-score strong {
+      font-size: 2.5rem;
+      line-height: 1;
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .report-score small {
+      display: block;
+      color: var(--text-3);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    /* Forensic Panels Grid */
+    .forensic-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .panel {
+      border-radius: var(--r-md);
+      background: var(--bg-raise);
+      border: 1px solid var(--line-subtle);
+      padding: 18px;
+    }
+    .panel h3 {
+      margin: 0 0 12px;
+      font-size: 12px;
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-family: var(--font-mono);
+    }
+
+    .kv-table {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 8px 12px;
+      font-size: 13px;
+    }
+    .kv-table .k { color: var(--text-3); }
+    .kv-table .v {
+      color: var(--text);
+      word-break: break-word;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+    }
+
+    /* Timeline visualization */
+    .timeline-panel {
+      margin-top: 14px;
+      margin-bottom: 20px;
+    }
+    .timeline-steps {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .time-card {
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      padding: 10px 14px;
+      flex: 1;
+      min-width: 140px;
+    }
+    .time-card-label {
+      font-size: 11px;
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-family: var(--font-mono);
+      margin-bottom: 4px;
+    }
+    .time-card-value {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      color: var(--text);
+      font-weight: 500;
+    }
+    .timeline-arrow {
+      color: var(--text-3);
+      font-size: 16px;
+    }
+
+    /* Verification rules list */
+    .checks-list {
+      list-style: none;
+      padding: 0;
+      margin: 20px 0 0;
+      display: grid;
+      gap: 10px;
+      border-top: 1px solid var(--line-subtle);
+      padding-top: 20px;
+    }
+    .check-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 10px 14px;
+      border-radius: var(--r-sm);
+      background: rgba(15, 18, 22, 0.4);
+      border: 1px solid var(--line-subtle);
+    }
+    .check-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-top: 6px;
+      flex-shrink: 0;
+    }
+    .check-dot.good { background: var(--status-good); box-shadow: 0 0 8px var(--status-good); }
+    .check-dot.warn { background: var(--status-warn); box-shadow: 0 0 8px var(--status-warn); }
+    .check-dot.bad { background: var(--status-bad); box-shadow: 0 0 8px var(--status-bad); }
+
+    .check-content strong {
+      display: block;
+      color: var(--text);
+      font-size: 13.5px;
+      font-weight: 550;
+      margin-bottom: 2px;
+    }
+    .check-content span {
+      color: var(--text-3);
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+
+    /* Comparison section */
+    .comparison-section {
+      margin-top: 40px;
+    }
+    .comparison-card {
+      border-radius: var(--r-xl);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--inner-hi), var(--shadow-card);
+      padding: 24px;
+      overflow-x: auto;
+    }
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+    .compare-table th {
+      padding: 12px 16px;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid var(--line);
+    }
+    .compare-table td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line-subtle);
+      color: var(--text-2);
+    }
+    .compare-table tr:last-child td { border-bottom: none; }
+    .compare-table td strong {
+      color: var(--accent-text);
+      font-family: var(--font-mono);
+    }
+
+    /* Heuristics Notice */
+    .heuristics-box {
+      margin-top: 48px;
+      padding: 24px;
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      border: 1px solid var(--line-subtle);
+      color: var(--text-3);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .heuristics-box strong {
+      color: var(--text-2);
+    }
+
+    /* Footer */
+    footer {
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid var(--line);
+      padding: 28px 0;
+    }
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .hidden { display: none !important; }
+
+    /* Chinese typography tweaks */
+    html:lang(zh-CN) h1 { letter-spacing: -0.02em; line-height: 1.18; }
+    html:lang(zh-CN) .lead { line-height: 1.75; }
+
+    @media (max-width: 860px) {
+      .forensic-grid { grid-template-columns: 1fr; }
+      .report-head { flex-direction: column; }
+      .report-score { text-align: left; }
+      .nav { padding-inline: 14px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="ambient" aria-hidden="true">
+    <div class="grid-bg"></div>
+    <div class="glow"></div>
+    <div class="shaft"></div>
+  </div>
+
+  <nav class="nav" aria-label="Tool navigation">
+    <a class="logo" href="../" aria-label="Linkai home">Linkai<span>.</span></a>
+    <div class="nav-right">
+      <a class="nav-back" href="../">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        <span data-i18n="nav.back">Back home</span>
+      </a>
+      <div class="lang-switch" role="group" aria-label="Language / 语言">
+        <button type="button" data-lang="en" aria-pressed="true">EN</button>
+        <button type="button" data-lang="zh" aria-pressed="false" lang="zh-CN">中</button>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <div class="container">
+      <div class="header-section">
+        <div class="badge-bar">
+          <span class="dot"></span>
+          <span data-i18n="tool.kicker">Local Forensics Engine</span>
+        </div>
+        <h1><span class="text-gradient" data-i18n="tool.title">Turnitin Report Forensics</span></h1>
+        <p class="lead" data-i18n="tool.desc">
+          Drop one or multiple Turnitin AI Writing Report PDFs to verify timeline consistency, PDF metadata, Submission IDs, page relationships, and underlying object structures. 100% private in browser.
+        </p>
+
+        <div class="notice">
+          <strong data-i18n="tool.noticeTitle">Important Notice:</strong>
+          <span data-i18n="tool.noticeText">
+            This tool performs static forensic screening for anomalies and tampering traces. Official verification should always be cross-referenced with your institution's Turnitin Online Submission logs.
+          </span>
+        </div>
+      </div>
+
+      <!-- Dropzone -->
+      <label class="dropzone" id="dropzone" for="fileInput">
+        <div class="dropzone-icon" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </div>
+        <div class="dropzone-title" data-i18n="drop.title">Drop Turnitin report PDFs here</div>
+        <div class="dropzone-subtitle" data-i18n="drop.subtitle">Click to browse or drop multiple files to compare</div>
+      </label>
+      <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple />
+
+      <div class="privacy-tag">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        <span data-i18n="drop.privacy">All files are processed entirely in your local browser — zero server uploads.</span>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="toolbar">
+        <button class="btn btn-primary" id="chooseBtn" type="button" data-i18n="btn.choose">Choose PDFs</button>
+        <button class="btn btn-ghost" id="clearBtn" type="button" data-i18n="btn.clear">Clear / Reset</button>
+      </div>
+
+      <div id="status"></div>
+      <div id="results" class="results"></div>
+
+      <!-- Comparison section -->
+      <section id="comparison" class="comparison-section hidden">
+        <div class="panel comparison-card">
+          <div class="mono" style="margin-bottom:12px;" data-i18n="comp.title">Fingerprint Cross-Comparison</div>
+          <div id="comparisonBody"></div>
+        </div>
+      </section>
+
+      <!-- Heuristics footnote -->
+      <div class="heuristics-box">
+        <strong data-i18n="heuristics.title">Heuristic Rule Baseline:</strong><br />
+        <span data-i18n="heuristics.desc">
+          Rules are modeled against authentic Turnitin PDF export characteristics. Variations can occur across different institutional LMS integrations (Canvas, Blackboard, Moodle) or export versions. Use this forensic report as a triage reference.
+        </span>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <span class="mono">© <span id="year"></span> Linkai</span>
+      <a class="mono" href="https://linkai.codes">linkai.codes</a>
+    </div>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+    const $ = s => document.querySelector(s);
+    const fileInput = $('#fileInput'), dropzone = $('#dropzone'), resultsEl = $('#results'), statusEl = $('#status');
+    const reports = [];
+
+    document.getElementById("year").textContent = new Date().getFullYear();
+
+    // ============ i18n Dictionaries ============
+    let currentLang = 'en';
+
+    const ZH = {
+      "nav.back": "返回主页",
+      "tool.kicker": "本地取证分析引擎",
+      "tool.title": "Turnitin 报告特征核验",
+      "tool.desc": "拖入一份或多份 Turnitin AI 报告 PDF，在本地深入排查元数据一致性、时间链时序、提交编号、总页数对应关系与底层对象特征。全程在浏览器本地运算，保障隐私安全。",
+      "tool.noticeTitle": "重要免责声明：",
+      "tool.noticeText": "本工具专用于技术层面的异常与篡改排查。最权威的判定始终建议结合所在院校 LMS 平台的 Turnitin 在线提交记录进行比对。",
+      "drop.title": "拖入 Turnitin 报告 PDF",
+      "drop.subtitle": "点击选择文件，支持同时多选以进行指纹交叉比对",
+      "drop.privacy": "所有分析全程在本地设备完成，绝不向任何云端上传文件。",
+      "btn.choose": "选择 PDF 文件",
+      "btn.clear": "清空重置",
+      "comp.title": "报告指纹交叉比对",
+      "heuristics.title": "启发式规则基准：",
+      "heuristics.desc": "本工具规则基于对常见真实 Turnitin 官方导出样本的技术特征提炼。不同大学使用的 LMS 学习平台（Canvas / Blackboard / Moodle）及导出版本可能产生合规差异。请将分析结果作为取证排查参考。",
+      "status.analyzing": "正在本地分析 {n} 份报告...",
+      "status.done": "分析完成，共分析 {n} 份报告",
+      "report.assessment": "综合判定结果",
+      "report.anomalyScore": "异常风险指数 · 满分 100",
+      "report.fields": "正文提取字段",
+      "report.metadata": "PDF 底层元数据",
+      "report.fonts": "嵌入字体特征",
+      "report.timeline": "时间链比对 (UTC 标准时间)",
+      "time.sub": "学生提交",
+      "time.created": "PDF 创建",
+      "time.down": "报告下载",
+      "time.mod": "PDF 修改",
+      "meta.fileName": "原始文件名",
+      "meta.ai": "AI 检出率",
+      "meta.pages": "PDF 总页数",
+      "meta.subPages": "正文提交页",
+      "meta.subId": "提交编号 (Submission ID)",
+      "pdf.title": "文档标题 (Title)",
+      "pdf.creator": "创建工具 (Creator)",
+      "pdf.producer": "生成引擎 (Producer)",
+      "pdf.objects": "PDF 对象总数",
+      "pdf.forms": "Form XObjects 封装",
+      "pdf.trailerId": "尾部 /ID 标识",
+      "present": "存在",
+      "missing": "无",
+      "comp.fileA": "报告 A",
+      "comp.fileB": "报告 B",
+      "comp.sim": "指纹结构相似度",
+      "label.low": "未见明显技术异常",
+      "label.moderate": "发现轻微异常指标",
+      "label.significant": "存在明显技术疑点",
+      "label.high": "高度疑似异常或篡改",
+      "err.parseFail": "解析失败"
+    };
+
+    const EN = {};
+    document.querySelectorAll("[data-i18n]").forEach(el => {
+      EN[el.dataset.i18n] = el.innerHTML;
+    });
+    EN["status.analyzing"] = "Analyzing {n} report file(s) locally...";
+    EN["status.done"] = "Analysis complete. {n} report(s) examined.";
+    EN["report.assessment"] = "Forensic Assessment";
+    EN["report.anomalyScore"] = "Anomaly Risk Score · 100";
+    EN["report.fields"] = "Extracted Report Fields";
+    EN["report.metadata"] = "PDF Underlying Metadata";
+    EN["report.fonts"] = "Embedded Font Signatures";
+    EN["report.timeline"] = "Timeline Verification (UTC)";
+    EN["time.sub"] = "Submitted";
+    EN["time.created"] = "Created";
+    EN["time.down"] = "Downloaded";
+    EN["time.mod"] = "Modified";
+    EN["meta.fileName"] = "Original File Name";
+    EN["meta.ai"] = "AI Detected";
+    EN["meta.pages"] = "Total PDF Pages";
+    EN["meta.subPages"] = "Submitted Pages";
+    EN["meta.subId"] = "Submission ID";
+    EN["pdf.title"] = "Title";
+    EN["pdf.creator"] = "Creator";
+    EN["pdf.producer"] = "Producer";
+    EN["pdf.objects"] = "Total Objects";
+    EN["pdf.forms"] = "Form XObjects";
+    EN["pdf.trailerId"] = "Trailer /ID";
+    EN["present"] = "Present";
+    EN["missing"] = "Missing";
+    EN["comp.fileA"] = "Report A";
+    EN["comp.fileB"] = "Report B";
+    EN["comp.sim"] = "Fingerprint Similarity";
+    EN["label.low"] = "Low Technical Anomaly";
+    EN["label.moderate"] = "Moderate Anomaly Detected";
+    EN["label.significant"] = "Significant Technical Anomaly";
+    EN["label.high"] = "High Anomaly / Possible Tampering";
+    EN["err.parseFail"] = "Parsing Failed";
+
+    function setLang(lang) {
+      currentLang = lang;
+      const dict = lang === 'zh' ? ZH : EN;
+      document.querySelectorAll("[data-i18n]").forEach(el => {
+        const val = dict[el.dataset.i18n];
+        if (val !== undefined) el.innerHTML = val;
+      });
+      document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+      document.querySelectorAll(".lang-switch button").forEach(b => {
+        b.setAttribute("aria-pressed", String(b.dataset.lang === lang));
+      });
+      // Re-render reports with translated labels if present
+      if (reports.length > 0) {
+        resultsEl.innerHTML = reports.map(renderReport).join('');
+        renderComparison();
+      }
+    }
+
+    const savedLang = (() => { try { return localStorage.getItem("lang"); } catch(e){ return null; } })();
+    const initialLang = savedLang || ((navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en");
+    setLang(initialLang);
+
+    document.querySelectorAll(".lang-switch button").forEach(b => {
+      b.addEventListener("click", () => {
+        setLang(b.dataset.lang);
+        try { localStorage.setItem("lang", b.dataset.lang); } catch(e){}
+      });
+    });
+
+    // ============ Dropzone and File Handling ============
+    $('#chooseBtn').onclick = () => fileInput.click();
+    $('#clearBtn').onclick = () => {
+      reports.length = 0;
+      resultsEl.innerHTML = '';
+      statusEl.textContent = '';
+      $('#comparison').classList.add('hidden');
+      fileInput.value = '';
+    };
+
+    fileInput.onchange = e => handleFiles([...e.target.files]);
+    ['dragenter','dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+    dropzone.addEventListener('drop', e => handleFiles([...e.dataTransfer.files].filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))));
+
+    function esc(v=''){ return String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function uniq(a){ return [...new Set(a.filter(Boolean))]; }
+    function fmtDate(ms){ if(!Number.isFinite(ms)) return '—'; return new Date(ms).toISOString().replace('T',' ').replace('.000Z',' UTC'); }
+    function mins(a,b){ return (a-b)/60000; }
+
+    function parseTurnitinDate(s){
+      if(!s) return NaN;
+      const m=s.match(/([A-Z][a-z]{2})\s+(\d{1,2}),\s+(\d{4}),\s+(\d{1,2}):(\d{2})\s+(AM|PM)\s+GMT(?:([+-])(\d{1,2})(?::?(\d{2}))?)?/i);
+      if(!m) return NaN;
+      const months={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+      let h=+m[4]; if(m[6].toUpperCase()==='PM'&&h!==12)h+=12; if(m[6].toUpperCase()==='AM'&&h===12)h=0;
+      const offset=((m[8]?+m[8]:0)*60+(m[9]?+m[9]:0))*(m[7]==='-'?-1:1);
+      return Date.UTC(+m[3],months[m[1]],+m[2],h,+m[5])-offset*60000;
+    }
+
+    function parsePdfDate(s){
+      if(!s) return NaN;
+      const m=String(s).match(/D:?(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?(?:([Zz])|([+-])(\d{2})'?((?:\d{2})?)'?)?/);
+      if(!m) return Date.parse(s);
+      let utc=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0));
+      if(m[8]){ const off=(+m[9]*60 + +(m[10]||0))*(m[8]==='-'?-1:1); utc -= off*60000; }
+      return utc;
+    }
+
+    function extractAfter(text,label,nextLabels){
+      const clean=text.replace(/\s+/g,' ').trim();
+      const idx=clean.indexOf(label); if(idx<0) return '';
+      let s=clean.slice(idx+label.length).trim(); let end=s.length;
+      for(const n of nextLabels){ const i=s.indexOf(n); if(i>=0&&i<end) end=i; }
+      return s.slice(0,end).trim();
+    }
+
+    async function extractText(pdf){
+      let all='';
+      for(let p=1;p<=pdf.numPages;p++){
+        const page=await pdf.getPage(p); const tc=await page.getTextContent();
+        all += '\n' + tc.items.map(i=>i.str).join(' ');
+      }
+      return all.replace(/\u0000/g,' ');
+    }
+
+    async function analyze(file){
+      const buffer=await file.arrayBuffer();
+      const bytes=new Uint8Array(buffer);
+      const raw=new TextDecoder('latin1').decode(bytes);
+      const pdf=await pdfjsLib.getDocument({data:bytes.slice()}).promise;
+      const meta=await pdf.getMetadata().catch(()=>({info:{},metadata:null}));
+      const text=await extractText(pdf);
+      const normalized=text.replace(/\s+/g,' ').trim();
+
+      const ids=uniq(normalized.match(/trn:oid:::[0-9]+:[0-9]+/g)||[]);
+      const subDateStr=(normalized.match(/Submission Date\s+([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4},\s+\d{1,2}:\d{2}\s+(?:AM|PM)\s+GMT(?:[+-]\d{1,2}(?::?\d{2})?)?)/i)||[])[1]||'';
+      const downDateStr=(normalized.match(/Download Date\s+([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4},\s+\d{1,2}:\d{2}\s+(?:AM|PM)\s+GMT(?:[+-]\d{1,2}(?::?\d{2})?)?)/i)||[])[1]||'';
+      const originalName=extractAfter(normalized,'File Name',['File Size','Pages','Words','Characters']).split(' File Size')[0].trim();
+      const pagesMatch=normalized.match(/File Size\s+[^ ]+(?:\s+[KMG]?B)?\s+(\d+)\s+Pages/i);
+      const submittedPages=pagesMatch?+pagesMatch[1]:NaN;
+      const ai=(normalized.match(/(\*|\d+)%\s+detected as AI/i)||[])[1]||'';
+      const info=meta.info||{};
+      const creation=parsePdfDate(info.CreationDate||info.CreationDateRaw||'');
+      const mod=parsePdfDate(info.ModDate||info.ModificationDate||'');
+      const submission=parseTurnitinDate(subDateStr), download=parseTurnitinDate(downDateStr);
+      const objectCount=(raw.match(/\b\d+\s+0\s+obj\b/g)||[]).length;
+      const formCount=(raw.match(/\/Subtype\s*\/Form\b/g)||[]).length;
+      const fonts=uniq([...raw.matchAll(/\/BaseFont\s*\/([^\s\/<>\[\]\(\)]+)/g)].map(m=>m[1])).slice(0,40);
+      const hasTrailerId=/\/ID\s*\[\s*<[^>]+>\s*<[^>]+>\s*\]/.test(raw);
+      const fileExt=(originalName.match(/\.([A-Za-z0-9]+)$/)||[])[1]?.toLowerCase()||'';
+      const title=info.Title||'', creator=info.Creator||'', producer=info.Producer||'';
+
+      const checks=[]; let score=0;
+      const add=(level,points,titleZh,titleEn,detailZh,detailEn)=>{
+        score+=points;
+        checks.push({level, points, titleZh, titleEn, detailZh, detailEn});
+      };
+
+      if(ids.length===0) add('warn',8,
+        '未提取到 Turnitin 提交编号', 'No Turnitin Submission ID found',
+        '未能从报告正文中检测到 trn:oid 格式的标识符', 'Could not detect trn:oid formatted identifier from text'
+      );
+      else if(ids.length>1) add('bad',40,
+        '提交编号冲突或不一致', 'Submission ID mismatch',
+        `检测到多个冲突的 ID 标识: ${ids.join(', ')}`, `Multiple conflicting ID identifiers found: ${ids.join(', ')}`
+      );
+      else checks.push({
+        level:'good', points:0,
+        titleZh:'提交编号格式一致', titleEn:'Submission ID consistent',
+        detailZh:`提取到唯一 ID: ${ids[0]}`, detailEn:`Unique ID confirmed: ${ids[0]}`
+      });
+
+      if(Number.isFinite(submission)&&Number.isFinite(download)){
+        const d=mins(download,submission);
+        if(d < -0.1) add('bad',35,
+          '下载时间早于提交时间 (时间逻辑倒流)', 'Download precedes submission (timeline anomaly)',
+          `下载时间比提交时间提前了 ${Math.abs(d).toFixed(1)} 分钟`, `Download timestamp is earlier by ${Math.abs(d).toFixed(1)} minutes`
+        );
+        else checks.push({
+          level:'good', points:0,
+          titleZh:'报告时间先后顺序合规', titleEn:'Valid timeline sequence',
+          detailZh:`下载时间在提交后 ${d.toFixed(1)} 分钟`, detailEn:`Download is ${d.toFixed(1)} min after submission`
+        });
+      } else add('warn',6,
+        '无法完全提取报告时间戳', 'Incomplete timeline timestamps',
+        '未能从报告中解析出提交或下载时间', 'Failed to parse submission or download timestamp from document'
+      );
+
+      if(fileExt==='docx' && Number.isFinite(download) && Number.isFinite(creation)){
+        const delta=mins(creation,download);
+        if(delta>2) add('bad',40,
+          'PDF 创建时间晚于报告标注的下载时间', 'PDF created after reported download',
+          `PDF 创建时间比报告上标注的下载时间晚了 ${delta.toFixed(1)} 分钟`, `Creation timestamp is ${delta.toFixed(1)} min after reported download time`
+        );
+        else if(delta>=-10) checks.push({
+          level:'good', points:0,
+          titleZh:'PDF 创建时间与下载记录吻合', titleEn:'PDF creation matches download timeline',
+          detailZh:`创建与下载时差在合理范围内: ${delta.toFixed(1)} 分钟`, detailEn:`Time difference is within expected envelope: ${delta.toFixed(1)} min`
+        });
+      }
+
+      if(Number.isFinite(creation)&&Number.isFinite(mod)){
+        if(mod < creation-1000) add('warn',12,
+          '修改时间早于创建时间', 'Modification predates creation',
+          '底层元数据时序倒置，存在重写痕迹', 'Metadata timeline inverted; possible re-export or modification artifact'
+        );
+        if(fileExt==='docx' && Math.abs(mod-creation)<1500 && Number.isFinite(submission)&&Number.isFinite(download) && mins(download,submission)>1){
+          add('warn',10,
+            '创建时间与修改时间完全相同', 'Identical creation & modification timestamp',
+            '对于提交与下载间隔较长的 DOCX 报告，常规导出通常有微小时差', 'Differs slightly from standard official export pattern for multi-minute DOCX queues'
+          );
+        }
+      }
+
+      if(fileExt==='docx'){
+        if(/^Microsoft Word - Document1$/i.test(title)) checks.push({
+          level:'good', points:0,
+          titleZh:'DOCX 标题符合官方特征', titleEn:'Matches standard DOCX title signature',
+          detailZh:title, detailEn:title
+        });
+        else if(title && title.toLowerCase().endsWith('.docx')) add('warn',8,
+          'DOCX 原文件名被直接写入 PDF 标题', 'Filename written into PDF Title metadata',
+          `文档 Title 为 “${title}”；官方常见导出通常固定标记为 “Microsoft Word - Document1”`, `Document Title is "${title}"; authentic exports typically carry "Microsoft Word - Document1"`
+        );
+      }
+
+      if(Number.isFinite(submittedPages)){
+        const expected=submittedPages+2;
+        if(pdf.numPages===expected) checks.push({
+          level:'good', points:0,
+          titleZh:'总页数与提交页数比例一致', titleEn:'Page count relationship matches baseline',
+          detailZh:`正文 ${submittedPages} 页 + 2 页封面封底 = 报告共 ${pdf.numPages} 页`, detailEn:`${submittedPages} submitted pages + 2 wrapper pages = ${pdf.numPages} total pages`
+        });
+        else add('warn',8,
+          '报告总页数与提交记录不符', 'Unexpected total report page count',
+          `正文标记为 ${submittedPages} 页，但 PDF 实际为 ${pdf.numPages} 页 (预期 ${expected} 页)`, `Submitted pages marked as ${submittedPages}, but PDF has ${pdf.numPages} pages (expected ${expected})`
+        );
+      }
+
+      if(fileExt==='docx' && Number.isFinite(submittedPages) && formCount>=submittedPages){
+        add('warn',15,
+          '检测到重度 Form XObject 页面包裹', 'Heavy Form XObject wrapper pattern detected',
+          `发现 ${formCount} 个 Form XObject 用于 ${submittedPages} 页文档。常规原生报告通常无此封装结构`, `Found ${formCount} Form XObjects for ${submittedPages} pages. Native Turnitin reports rarely wrap pages in this structure`
+        );
+      } else checks.push({
+        level:'good', points:0,
+        titleZh:'未见异常页面封装结构', titleEn:'Clean page wrapper structure',
+        detailZh:`Form XObjects 数量: ${formCount}`, detailEn:`Form XObjects count: ${formCount}`
+      });
+
+      const hasTurnitinFonts=fonts.some(f=>/LexendDeca|NotoSans/i.test(f));
+      if(hasTurnitinFonts) checks.push({
+        level:'good', points:0,
+        titleZh:'检测到 Turnitin 官方特征字体', titleEn:'Official Turnitin font signatures detected',
+        detailZh:`包含特征字体: ${fonts.filter(f=>/LexendDeca|NotoSans/i.test(f)).join(', ')}`,
+        detailEn:`Detected fonts: ${fonts.filter(f=>/LexendDeca|NotoSans/i.test(f)).join(', ')}`
+      });
+      else add('warn',4,
+        '未检测到常见官方特征字体', 'Turnitin UI font signatures not detected',
+        '可能由于不同机构 LMS 接入路径或导出分支差异所致', 'Can occur legitimately across different institutional LMS integrations'
+      );
+
+      if(/pdf-lib/i.test(producer||creator)) checks.push({
+        level:'good', points:0,
+        titleZh:'包含 pdf-lib 生成引擎标识', titleEn:'pdf-lib producer engine detected',
+        detailZh:'官方报告与常见第三方合并工具均普遍使用此库，作为中性特征记录',
+        detailEn:'Common engine signature observed in both authentic and merged exports (neutral)'
+      });
+
+      score=Math.min(100,score);
+      let labelKey='label.low', cls='good';
+      if(score>=60){ labelKey='label.high'; cls='bad'; }
+      else if(score>=35){ labelKey='label.significant'; cls='bad'; }
+      else if(score>=15){ labelKey='label.moderate'; cls='warn'; }
+
+      return {
+        fileName:file.name, size:file.size, pdfPages:pdf.numPages, originalName,
+        submittedPages, ai, ids, subDateStr, downDateStr, submission, download, creation,
+        mod, title, creator, producer, objectCount, formCount, fonts, hasTrailerId, fileExt,
+        score, labelKey, cls, checks
+      };
+    }
+
+    function renderReport(r){
+      const isZh = currentLang === 'zh';
+      const dict = isZh ? ZH : EN;
+
+      const metaRows=[
+        [dict["meta.fileName"], r.originalName||'—'],
+        [dict["meta.ai"], r.ai ? `${r.ai}%` : '—'],
+        [dict["meta.pages"], r.pdfPages],
+        [dict["meta.subPages"], Number.isFinite(r.submittedPages) ? r.submittedPages : '—'],
+        [dict["meta.subId"], r.ids.join(', ') || '—']
+      ];
+      const pdfRows=[
+        [dict["pdf.title"], r.title||'—'],
+        [dict["pdf.creator"], r.creator||'—'],
+        [dict["pdf.producer"], r.producer||'—'],
+        [dict["pdf.objects"], r.objectCount],
+        [dict["pdf.forms"], r.formCount],
+        [dict["pdf.trailerId"], r.hasTrailerId ? dict["present"] : dict["missing"]]
+      ];
+      const fontText=r.fonts.length ? r.fonts.slice(0,10).join(', ') : '—';
+      const labelText = dict[r.labelKey];
+
+      return `<article class="report">
+        <div class="report-head">
+          <div class="report-title-area">
+            <div class="report-file-name">${esc(r.fileName)}</div>
+            <div class="report-badge-row">
+              <span class="mono" style="font-size:11px;">${dict["report.assessment"]}</span>
+              <span class="badge-status ${r.cls}">${esc(labelText)}</span>
+            </div>
+          </div>
+          <div class="report-score">
+            <strong>${r.score}</strong>
+            <small>${dict["report.anomalyScore"]}</small>
+          </div>
+        </div>
+
+        <div class="forensic-grid">
+          <div class="panel">
+            <h3>${dict["report.fields"]}</h3>
+            <div class="kv-table">${metaRows.map(([a,b])=>`<div class="k">${esc(a)}</div><div class="v">${esc(b)}</div>`).join('')}</div>
+          </div>
+          <div class="panel">
+            <h3>${dict["report.metadata"]}</h3>
+            <div class="kv-table">${pdfRows.map(([a,b])=>`<div class="k">${esc(a)}</div><div class="v">${esc(b)}</div>`).join('')}</div>
+          </div>
+          <div class="panel">
+            <h3>${dict["report.fonts"]}</h3>
+            <div style="font-size:12.5px;line-height:1.6;word-break:break-word;color:var(--text);font-family:var(--font-mono);">${esc(fontText)}</div>
+          </div>
+        </div>
+
+        <div class="panel timeline-panel">
+          <h3>${dict["report.timeline"]}</h3>
+          <div class="timeline-steps">
+            <div class="time-card">
+              <div class="time-card-label">${dict["time.sub"]}</div>
+              <div class="time-card-value">${esc(fmtDate(r.submission))}</div>
+            </div>
+            <span class="timeline-arrow">→</span>
+            <div class="time-card">
+              <div class="time-card-label">${dict["time.created"]}</div>
+              <div class="time-card-value">${esc(fmtDate(r.creation))}</div>
+            </div>
+            <span class="timeline-arrow">→</span>
+            <div class="time-card">
+              <div class="time-card-label">${dict["time.down"]}</div>
+              <div class="time-card-value">${esc(fmtDate(r.download))}</div>
+            </div>
+            <span class="timeline-arrow">→</span>
+            <div class="time-card">
+              <div class="time-card-label">${dict["time.mod"]}</div>
+              <div class="time-card-value">${esc(fmtDate(r.mod))}</div>
+            </div>
+          </div>
+        </div>
+
+        <ul class="checks-list">
+          ${r.checks.map(c=>`
+            <li class="check-item">
+              <span class="check-dot ${c.level}"></span>
+              <div class="check-content">
+                <strong>${esc(isZh ? c.titleZh : c.titleEn)}</strong>
+                <span>${esc(isZh ? c.detailZh : c.detailEn)}</span>
+              </div>
+            </li>
+          `).join('')}
+        </ul>
+      </article>`;
+    }
+
+    function similarity(a,b){
+      let got=0,total=0; const w=(n,ok)=>{total+=n;if(ok)got+=n};
+      w(20,(a.producer||'')===(b.producer||''));
+      w(10,(a.creator||'')===(b.creator||''));
+      const cat=x=>/^Microsoft Word - Document1$/i.test(x.title)?'word':(x.title||'').toLowerCase().endsWith('.docx')?'docx-title':'other';
+      w(10,cat(a)===cat(b));
+      const A=new Set(a.fonts.map(x=>x.replace(/^[A-Z]{6}\+/,'').replace(/-\d+$/,''))), B=new Set(b.fonts.map(x=>x.replace(/^[A-Z]{6}\+/,'').replace(/-\d+$/,'')));
+      const inter=[...A].filter(x=>B.has(x)).length, union=new Set([...A,...B]).size||1; w(25,inter/union>.65); got += 25*Math.max(0,(inter/union)-.65)/.35;
+      w(15,Math.abs((a.formCount/a.pdfPages)-(b.formCount/b.pdfPages))<.2);
+      w(10,Math.abs((a.objectCount/a.pdfPages)-(b.objectCount/b.pdfPages))<2);
+      w(10,a.hasTrailerId===b.hasTrailerId);
+      return Math.min(100,Math.round(got/total*100));
+    }
+
+    function renderComparison(){
+      if(reports.length<2){ $('#comparison').classList.add('hidden'); return; }
+      const isZh = currentLang === 'zh';
+      const dict = isZh ? ZH : EN;
+
+      const rows=[];
+      for(let i=0;i<reports.length;i++){
+        for(let j=i+1;j<reports.length;j++){
+          rows.push([reports[i].fileName, reports[j].fileName, similarity(reports[i], reports[j])]);
+        }
+      }
+      $('#comparisonBody').innerHTML=`<table class="compare-table">
+        <thead>
+          <tr>
+            <th>${dict["comp.fileA"]}</th>
+            <th>${dict["comp.fileB"]}</th>
+            <th>${dict["comp.sim"]}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r=>`<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td><strong>${r[2]}%</strong></td></tr>`).join('')}
+        </tbody>
+      </table>`;
+      $('#comparison').classList.remove('hidden');
+    }
+
+    async function handleFiles(files){
+      if(!files.length) return;
+      const dict = currentLang === 'zh' ? ZH : EN;
+      statusEl.textContent = dict["status.analyzing"].replace("{n}", files.length);
+
+      for(const f of files){
+        try{
+          const r=await analyze(f);
+          reports.push(r);
+          resultsEl.insertAdjacentHTML('beforeend',renderReport(r));
+        }catch(err){
+          resultsEl.insertAdjacentHTML('beforeend',`<article class="report">
+            <div class="report-file-name">${esc(f.name)}</div>
+            <span class="badge-status bad">${dict["err.parseFail"]}</span>
+            <p style="color:var(--text-3);font-size:13px;margin-top:12px;">${esc(err.message||err)}</p>
+          </article>`);
+        }
+      }
+      statusEl.textContent = dict["status.done"].replace("{n}", reports.length);
+      renderComparison();
+    }
+  </script>
+</body>
+</html>
