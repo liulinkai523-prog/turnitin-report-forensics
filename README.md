@@ -5,8 +5,19 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Privacy: 100% Client-Side](https://img.shields.io/badge/Privacy-100%25%20Zero--Upload-emerald.svg)](#privacy--security-model)
+[![Official Live App](https://img.shields.io/badge/Official%20App-linkai.codes%2Fturnitin--check%2F-4cc4ea.svg)](https://linkai.codes/turnitin-check/)
 [![Engine: Pure Web Tech](https://img.shields.io/badge/Engine-Vanilla%20JS%20%2B%20Web%20Crypto-cyan.svg)](#how-it-works)
-[![Live Demo](https://img.shields.io/badge/Demo-Live%20Forensics%20App-4cc4ea.svg)](https://linkai.codes/turnitin-check/)
+
+---
+
+## 🌐 Official Web App (在线免安装体验)
+
+You can access and use the production tool immediately at:  
+👉 **[https://linkai.codes/turnitin-check/](https://linkai.codes/turnitin-check/)**
+
+- **Official Live Site**: [https://linkai.codes/turnitin-check/](https://linkai.codes/turnitin-check/)
+- **Personal Space & Portfolio**: [https://linkai.codes](https://linkai.codes)
+- **100% Privacy Guarantee**: Zero server uploads, all parsing executed locally in your browser.
 
 ---
 
@@ -49,24 +60,25 @@ Common forgery tactics include:
 
 ## 🚀 Quick Start & Deployment
 
-### 1. Run Locally (Zero Build Step)
+### 1. Online Production Version
+Visit the official live tool directly:  
+🔗 **[https://linkai.codes/turnitin-check/](https://linkai.codes/turnitin-check/)**
+
+### 2. Run Locally (Zero Build Step)
 This project is built with zero framework dependencies (Vanilla HTML5 / Modern CSS / Pure JS). You can run it instantly:
 
 ```bash
-git clone https://github.com/your-username/turnitin-report-forensics.git
+git clone https://github.com/liulinkai523-prog/turnitin-report-forensics.git
 cd turnitin-report-forensics
 
-# Open directly in browser, or serve with any static server:
+# Open index.html directly in any browser, or serve with a lightweight server:
 npx serve .
 # Or Python:
 python -m http.server 8000
 ```
 
-### 2. Deploy to GitHub Pages in 30 Seconds
-1. Push this repository to your GitHub account.
-2. Go to **Settings** → **Pages**.
-3. Under **Branch**, select `main` (or `master`) and folder `/ (root)`.
-4. Click **Save**. Your tool is instantly live across the globe!
+### 3. Deploy Your Own Copy
+Deploy to GitHub Pages, Cloudflare Pages, or Vercel with a single click by pointing the root directory to `index.html`.
 
 ---
 
@@ -77,6 +89,16 @@ python -m http.server 8000
 1. **No Backend**: There is no Node.js, Python, or API server processing your files.
 2. **Local ArrayBuffer Parsing**: The PDF binary is read using native browser `FileReader` API as an `ArrayBuffer` directly in client memory.
 3. **No External CDN Tracking**: No cookies, no session tracking, and no telemetry data collection.
+
+---
+
+## 👤 Author & Credits
+
+- **Author**: Lucas (Linkai Liu)
+- **Website**: [linkai.codes](https://linkai.codes)
+- **Live Tool**: [linkai.codes/turnitin-check/](https://linkai.codes/turnitin-check/)
+
+If this tool helped protect your academic integrity or verify documents, consider starring ⭐ the repository!
 
 ---
 
