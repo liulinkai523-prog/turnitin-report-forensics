@@ -3,6 +3,8 @@
 > **Client-side, zero-upload forensic analyzer for Turnitin Similarity and AI Writing Reports.**  
 > Verify authenticity, detect timeline inconsistencies, inspect raw PDF object streams, and uncover tampering traces directly inside your browser.
 
+[English Documentation](README.md) | [🇨🇳 简体中文文档](README_zh.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Privacy: 100% Client-Side](https://img.shields.io/badge/Privacy-100%25%20Zero--Upload-emerald.svg)](#privacy--security-model)
 [![Official Live App](https://img.shields.io/badge/Official%20App-linkai.codes%2Fturnitin--check%2F-4cc4ea.svg)](https://linkai.codes/turnitin-check/)
